@@ -108,12 +108,64 @@ def broadcast(tensor: Tensor, rank: int, world_size: int, src: int=0):
                     dst=r
                 )
     else:
-        receive_tensor = t.ones_like(tensor, dtype=tensor.dtype)
+        receive_tensor = t.zeros_like(tensor, dtype=tensor.dtype)
         dist.recv( receive_tensor, src=src)
+        tensor.copy_(receive_tensor)
         print(f"Rank {rank=} received tensor from rank {src=}")
 
     # dist.destroy_process_group()
 
 if MAIN:
     tests.test_broadcast(broadcast, WORLD_SIZE)
+# %%
+
+def reduce(tensor, rank, world_size, dst=0,
+           op: Literal["sum", "mean"]="sum"):
+    """
+    Reduces gradient to rank `dst` so this process contains the sum
+    or mean of all tensors across processes 
+    """
+    if rank != dst:
+        dist.send(
+            tensor=tensor,
+            dst=dst
+        )
+    else:
+        for r in range(world_size):
+            if r != dst:
+                receive_tensor = t.zeros_like(tensor, dtype=tensor.dtype)
+                # we want to add current tensor's value for dst to the received
+                # interesting can't do 
+                # * This is actually because dist.recv(...) is an in-place operation
+                # * that return None
+                # >>> tensor += dist.recv(...)
+                dist.recv(
+                    receive_tensor,
+                    src=r
+                )
+                tensor += receive_tensor
+
+        if op == "mean":
+            tensor /= world_size
+
+def all_reduce(tensor, rank, world_size, op: Literal["sum", "mean"] = "sum"):
+    """
+    All_Reduce the tensor across all ranks, using 0 as the initial gathering rank.
+    Does the same are `reduce` but broadcasts the result back
+    """
+
+    # can i just use reduce and broadcast?
+    # reduce all tensors and set dist to rank 0
+    reduce(tensor, rank, world_size, dst=0, op=op)
+    # broadcast it to all tensors from src=0 (where it was gathered)
+    broadcast(tensor, rank, world_size, src=0)
+
+if MAIN:
+    tests.test_reduce(reduce, WORLD_SIZE)
+    tests.test_all_reduce(all_reduce, WORLD_SIZE)
+
+        
+
+
+
 # %%
