@@ -222,3 +222,58 @@ if MAIN:
 
 
 # %%
+
+def get_untrained_resnet(n_classes: int) -> resnet34:
+    """
+    gets untrained resnet using code from part2_cnns.solutions (you can replace this with your
+    implementation).
+    """
+    resnet = resnet34()
+    resnet.out_layers[-1] = linear(resnet.out_features_per_group[-1], n_classes)
+    return resnet
+
+
+@dataclass
+class distresnettrainingargs(wandbresnetfinetuningargs):
+    world_size: int = 1
+    wandb_project: str | none = "day3-resnet-dist-training"
+
+
+class distresnettrainer:
+    args: distresnettrainingargs
+
+    def __init__(self, args: distresnettrainingargs, rank: int):
+        self.args = args
+        self.rank = rank
+        self.device = t.device(f"cuda:{rank}")
+
+    def pre_training_setup(self):
+        raise notimplementederror()
+
+    def training_step(self, imgs: tensor, labels: tensor) -> tensor:
+        raise notimplementederror()
+
+    @t.inference_mode()
+    def evaluate(self) -> float:
+        raise notimplementederror()
+
+    def train(self):
+        raise notimplementederror()
+
+
+def dist_train_resnet_from_scratch(rank, world_size):
+    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+    args = distresnettrainingargs(world_size=world_size)
+    trainer = distresnettrainer(args, rank)
+    trainer.train()
+    dist.destroy_process_group()
+
+
+if main:
+    world_size = t.cuda.device_count()
+    mp.spawn(
+        dist_train_resnet_from_scratch,
+        args=(world_size,),
+        nprocs=world_size,
+        join=true,
+    )
